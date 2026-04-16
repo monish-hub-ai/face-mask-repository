@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Mask Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 30px 20px;
+        }
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            color: #8e8ea0;
+            font-size: 0.95rem;
+            margin-bottom: 30px;
+        }
+        .main-layout {
+            display: flex;
+            gap: 24px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 100%;
+            max-width: 1100px;
+        }
+        .video-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        .video-feed {
+            border-radius: 10px;
+            max-width: 100%;
+            width: 640px;
+            height: auto;
+            display: block;
+        }
+        .stats-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 240px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+        }
+        .stat-card .icon {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
+        .stat-card .label {
+            font-size: 0.85rem;
+            color: #8e8ea0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+        }
+        .stat-card .count {
+            font-size: 2.8rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+        .stat-card.total {
+            border-left: 4px solid #3a7bd5;
+        }
+        .stat-card.total .count {
+            color: #3a7bd5;
+        }
+        .stat-card.mask {
+            border-left: 4px solid #2ecc71;
+        }
+        .stat-card.mask .count {
+            color: #2ecc71;
+        }
+        .stat-card.no-mask {
+            border-left: 4px solid #e74c3c;
+        }
+        .stat-card.no-mask .count {
+            color: #e74c3c;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #2ecc71;
+            margin-right: 6px;
+            animation: pulse 1.5s infinite;
+        }
+        .status-bar {
+            font-size: 0.8rem;
+            color: #8e8ea0;
+            margin-top: 12px;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Real-Time Face Mask Detection</h1>
+    <p class="subtitle">Powered by OpenCV SSD Face Detector &amp; MobileNetV2</p>
+
+    <div class="main-layout">
+        <div class="video-container">
+            <!-- The image source points to the Flask route that yields multipart HTTP frames -->
+            <img class="video-feed" src="{{ url_for('video_feed') }}" alt="Video Stream connecting to webcam...">
+            <p class="status-bar"><span class="status-dot"></span>Live — Webcam Active</p>
+        </div>
+
+        <div class="stats-panel">
+            <div class="stat-card total">
+                <div class="icon">👥</div>
+                <div class="label">Total People</div>
+                <div class="count" id="total-count">0</div>
+            </div>
+            <div class="stat-card mask">
+                <div class="icon">😷</div>
+                <div class="label">With Mask</div>
+                <div class="count" id="mask-count">0</div>
+            </div>
+            <div class="stat-card no-mask">
+                <div class="icon">⚠️</div>
+                <div class="label">Without Mask</div>
+                <div class="count" id="no-mask-count">0</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Poll the /counts endpoint every 500ms to update live stats
+        async function updateCounts() {
+            try {
+                const response = await fetch('/counts');
+                const data = await response.json();
+                document.getElementById('total-count').textContent = data.total;
+                document.getElementById('mask-count').textContent = data.mask;
+                document.getElementById('no-mask-count').textContent = data.no_mask;
+            } catch (err) {
+                // silently retry
+            }
+        }
+
+        setInterval(updateCounts, 500);
+        updateCounts();
+    </script>
+</body>
+</html>
