@@ -137,9 +137,10 @@
 
     <div class="main-layout">
         <div class="video-container">
-            <!-- The image source points to the Flask route that yields multipart HTTP frames -->
-            <img class="video-feed" src="{{ url_for('video_feed') }}" alt="Video Stream connecting to webcam...">
-            <p class="status-bar"><span class="status-dot"></span>Live — Webcam Active</p>
+            <!-- Capture video locally and draw predictions on canvas -->
+            <video id="video-stream" autoplay playsinline style="display: none;"></video>
+            <canvas id="output-canvas" class="video-feed"></canvas>
+            <p class="status-bar" id="status-bar"><span class="status-dot"></span>Wait — Requesting Camera</p>
         </div>
 
         <div class="stats-panel">
@@ -162,21 +163,128 @@
     </div>
 
     <script>
-        // Poll the /counts endpoint every 500ms to update live stats
-        async function updateCounts() {
+        const video = document.getElementById('video-stream');
+        const canvas = document.getElementById('output-canvas');
+        const ctx = canvas.getContext('2d');
+        const statusBar = document.getElementById('status-bar');
+
+        const totalCountEl = document.getElementById('total-count');
+        const maskCountEl = document.getElementById('mask-count');
+        const noMaskCountEl = document.getElementById('no-mask-count');
+
+        let isProcessing = false;
+
+        async function setupCamera() {
             try {
-                const response = await fetch('/counts');
-                const data = await response.json();
-                document.getElementById('total-count').textContent = data.total;
-                document.getElementById('mask-count').textContent = data.mask;
-                document.getElementById('no-mask-count').textContent = data.no_mask;
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+                video.srcObject = stream;
+                return new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        resolve(video);
+                    };
+                });
             } catch (err) {
-                // silently retry
+                statusBar.innerHTML = '<span class="status-dot" style="background:#e74c3c; animation:none;"></span>Error: Camera Access Denied';
             }
         }
 
-        setInterval(updateCounts, 500);
-        updateCounts();
+        async function predictFrame() {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            // Draw video frame to an offscreen canvas for prediction (smaller size)
+            const processCanvas = document.createElement('canvas');
+            const targetWidth = 400; // Resize for server
+            const scale = targetWidth / video.videoWidth;
+            const targetHeight = video.videoHeight * scale;
+            processCanvas.width = targetWidth;
+            processCanvas.height = targetHeight;
+            const pCtx = processCanvas.getContext('2d');
+            pCtx.drawImage(video, 0, 0, targetWidth, targetHeight);
+            
+            const base64Image = processCanvas.toDataURL('image/jpeg', 0.8);
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: base64Image })
+                });
+                
+                const data = await response.json();
+                
+                // Draw video to main canvas
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                let maskCount = 0;
+                let noMaskCount = 0;
+
+                // Draw bounding boxes from prediction data
+                data.predictions.forEach(pred => {
+                    const [startX, startY, endX, endY] = pred.box; 
+                    // Box coordinates are relative to the 400px downscaled image
+                    const sX = startX / scale;
+                    const sY = startY / scale;
+                    const eX = endX / scale;
+                    const eY = endY / scale;
+
+                    ctx.lineWidth = 4;
+                    ctx.font = "bold 18px Arial";
+                    const isMask = pred.label === 'Mask';
+                    
+                    if (isMask) {
+                        ctx.strokeStyle = '#2ecc71';
+                        ctx.fillStyle = '#2ecc71';
+                        maskCount++;
+                    } else {
+                        ctx.strokeStyle = '#e74c3c';
+                        ctx.fillStyle = '#e74c3c';
+                        noMaskCount++;
+                    }
+
+                    ctx.strokeRect(sX, sY, eX - sX, eY - sY);
+                    
+                    // Draw Label Background
+                    const text = `${pred.label}: ${(pred.prob * 100).toFixed(1)}%`;
+                    const textWidth = ctx.measureText(text).width;
+                    const textHeight = 25;
+                    const yPos = Math.max(0, sY - textHeight);
+                    
+                    ctx.fillRect(sX, yPos, textWidth + 10, textHeight);
+                    
+                    // Draw Label Text
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(text, sX + 5, yPos + 18);
+                });
+
+                // Update Stats live
+                totalCountEl.textContent = maskCount + noMaskCount;
+                maskCountEl.textContent = maskCount;
+                noMaskCountEl.textContent = noMaskCount;
+
+            } catch (err) {
+                // If prediction fails or takes too long, just draw the clean video frame
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            } finally {
+                isProcessing = false;
+                requestAnimationFrame(predictFrame);
+            }
+        }
+
+        async function init() {
+            await setupCamera();
+            if (video.srcObject) {
+                statusBar.innerHTML = '<span class="status-dot"></span>Live — Webcam Active';
+                video.play();
+                predictFrame();
+            }
+        }
+
+        init();
     </script>
 </body>
 </html>
