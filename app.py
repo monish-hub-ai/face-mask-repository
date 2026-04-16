@@ -20,7 +20,11 @@ def index():
 
 def init_models():
     global faceNet, maskNet
-    faceNet, maskNet = load_models()
+    if faceNet is None or maskNet is None:
+        faceNet, maskNet = load_models()
+
+# Initialize models globally for Gunicorn workers
+init_models()
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -69,7 +73,6 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Initialize models before the first request
-    init_models()
+    # Start dev server
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
